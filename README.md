@@ -77,3 +77,73 @@
 - 📊 **Thống kê và biểu đồ tài chính** theo tháng.
 - 🔒 **Bảo mật dữ liệu người dùng**.
 
+## 🖼️ Hình ảnh các chức năng
+
+### 1. Trang chủ
+<p align="center">
+  <img src="https://raw.githubusercontent.com/CuongTang5/BTL_Quan_ly_chi_tieu/main/docs/images/GiaoDienIndex.png" width="750">
+</p>
+
+### 2. Đăng nhập
+<p align="center">
+  <img src="https://raw.githubusercontent.com/CuongTang5/BTL_Quan_ly_chi_tieu/main/docs/images/GiaodienLogin.png" width="750">
+</p>
+
+### 3. Đăng ký
+<p align="center">
+  <img src="https://raw.githubusercontent.com/CuongTang5/BTL_Quan_ly_chi_tieu/main/docs/images/GiaodienRegister.png" width="750">
+</p>
+
+### 4. Dashboard (Tổng quan tài chính)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/CuongTang5/BTL_Quan_ly_chi_tieu/main/docs/images/Dashboard.png" width="750">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/CuongTang5/BTL_Quan_ly_chi_tieu/main/docs/images/Dashboard1.png" width="750">
+</p>
+
+### 5. Quản lý các khoản chi tiêu
+<p align="center">
+  <img src="https://raw.githubusercontent.com/CuongTang5/BTL_Quan_ly_chi_tieu/main/docs/images/Cackhoanchitieu.png" width="750">
+</p>
+
+### 6. Xem biểu đồ
+<p align="center">
+  <img src="https://raw.githubusercontent.com/CuongTang5/BTL_Quan_ly_chi_tieu/main/docs/images/Bieudo.png" width="750">
+</p>
+
+---
+
+### 7. Mục tiêu tiết kiệm
+<p align="center">
+  <img src="https://raw.githubusercontent.com/CuongTang5/BTL_Quan_ly_chi_tieu/main/docs/images/Muctieutietkiem.png" width="750">
+</p>
+
+## ⚙️ Cài đặt và chạy dự án
+
+### **Bước 1:** Tải XAMPP & MySQL Workbench
+
+- https://www.apachefriends.org/download.html  
+- https://dev.mysql.com/downloads/workbench/
+
+---
+
+### **Bước 2:** Clone repository vào thư mục `htdocs` trong XAMPP
+
+git clone https://github.com/CuongTang5/BTL_Quan_ly_chi_tieu.git
+
+---
+### **Bước 3:** Tạo file db_connection.php trong thư mục functions
+
+<?php
+return [
+    'servername' => 'localhost',
+    'username' => 'root',
+    'password' => 'ct103205',
+    'dbname' => 'qlct',
+    'port' => 3306
+];
+
+
+

@@ -1,0 +1,183 @@
+* {
+  margin: 0; padding: 0;
+  box-sizing: border-box;
+  font-family: 'Poppins', sans-serif;
+}
+
+header {
+  width: 100%;
+  padding: 15px 50px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  position: fixed;
+  top: 0;
+}
+
+.logo { 
+  font-size: 20px; 
+  font-weight: 700; 
+}
+
+/* ✅ Fix nav bị xuống dòng */
+nav {
+  display: flex;
+  align-items: center;
+}
+
+nav a {
+  margin-left: 20px;
+  text-decoration: none;
+  color: #333;
+  font-weight: 500;
+}
+
+/* Nút */
+.btn-login, .btn-register {
+  padding: 8px 15px;
+  border-radius: 6px;
+}
+
+.btn-login { background: #f0f0f0; }
+.btn-register { background: #4CAF50; color: white; }
+
+/* Hero */
+.hero {
+  height: 100vh;
+  background: url("https://images.unsplash.com/photo-1553729459-efe14ef6055d") center/cover no-repeat;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding-top: 80px;
+  color: white;
+}
+
+.hero h1 { font-size: 45px; max-width: 600px; }
+.hero p { margin-top: 10px; font-size: 18px; max-width: 500px; }
+
+.cta-btn {
+  display: inline-block;
+  padding: 12px 28px;
+  background: #4CAF50;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: transform 0.25s ease, background 0.25s ease;
+  margin-top: 20px;
+}
+
+.cta-btn:hover {
+  transform: scale(1.1);
+  background: #45a049;
+}
+
+/* Features */
+.features {
+  display: flex;
+  justify-content: center;
+  padding: 60px 0;
+  gap: 40px;
+  background: #f9f9f9;
+}
+
+.feature {
+  width: 260px;
+  text-align: center;
+}
+
+.feature i { 
+  font-size: 45px; 
+  color: #4CAF50; 
+  margin-bottom: 10px; 
+}
+
+/* Footer */
+footer {
+  text-align: center;
+  padding: 18px;
+  background: #333;
+  color: white;
+  margin-top: 40px;
+}
+
+/* ✅ Avatar */
+.avatar-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  margin-left: 20px;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .25s ease;
+}
+
+.avatar-link:hover .avatar-img {
+  transform: scale(1.12);
+}
+
+.dashboard {
+    padding-top: 120px;
+    text-align: center;
+}
+
+.dashboard .sub-text {
+    font-size: 16px;
+    color: #777;
+    margin-top: 5px;
+    margin-bottom: 30px;
+}
+
+.dashboard-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 25px;
+    padding: 0 40px;
+}
+
+.card {
+    background: white;
+    padding: 30px 20px;
+    border-radius: 14px;
+    text-decoration: none;
+    color: #333;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+    transition: transform .25s ease, box-shadow .25s ease;
+    cursor: pointer;
+    text-align: center;
+}
+
+.card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+
+.card i {
+    font-size: 42px;
+    color: #4CAF50;
+    margin-bottom: 15px;
+}
+
+.card h3 {
+    font-size: 20px;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.card p {
+    font-size: 14px;
+    color: #666;
+}
+

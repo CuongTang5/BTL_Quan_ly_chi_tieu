@@ -1,797 +1,324 @@
 <?php
-if (session_status() == PHP_SESSION_NONE) {
-    session_start();
-}
-include __DIR__ . '/../../function/db_connection.php';
+session_start();
+// Dùng đường dẫn tuyệt đối
+include $_SERVER['DOCUMENT_ROOT'] . '/Quanlychitieu/function/db_connection.php';
 
+// Check login
 if(!isset($_SESSION['user_id'])){
-    header("Location: ../auth/login.php");
+    header("Location: /Quanlychitieu/view/auth/login.php");
     exit();
 }
 
 $conn = getDbConnection();
 $user_id = $_SESSION['user_id'];
 
-// Lấy danh sách chi tiêu
-$stmt = $conn->prepare("SELECT * FROM transactions WHERE user_id=? ORDER BY date DESC");
-$stmt->bind_param("i", $user_id);
+// --- 1. LẤY THAM SỐ TỪ URL ---
+$search = $_GET['search'] ?? '';
+$type_filter = $_GET['type'] ?? 'all'; 
+$category_filter = $_GET['category'] ?? '';
+$sort_option = $_GET['sort'] ?? 'newest';
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$limit = 6; 
+
+// --- 2. XÂY DỰNG QUERY ---
+$where_clauses = ["user_id = ?"];
+$params = [$user_id];
+$types = "i";
+
+if (!empty($search)) {
+    $where_clauses[] = "(description LIKE ? OR category LIKE ?)";
+    $search_term = "%$search%";
+    $params[] = $search_term; $params[] = $search_term; $types .= "ss";
+}
+
+if ($type_filter !== 'all') {
+    $where_clauses[] = "type = ?";
+    $params[] = $type_filter; $types .= "s";
+}
+
+if (!empty($category_filter) && $category_filter !== 'all') {
+    $where_clauses[] = "category = ?";
+    $params[] = $category_filter; $types .= "s";
+}
+
+$where_sql = implode(" AND ", $where_clauses);
+
+$order_sql = "date DESC, id DESC";
+switch ($sort_option) {
+    case 'oldest': $order_sql = "date ASC, id ASC"; break;
+    case 'amount_desc': $order_sql = "amount DESC, id DESC"; break;
+    case 'amount_asc': $order_sql = "amount ASC, id ASC"; break;
+}
+
+// --- 3. PHÂN TRANG ---
+$count_sql = "SELECT COUNT(*) as total FROM transactions WHERE $where_sql";
+$count_stmt = $conn->prepare($count_sql);
+$count_stmt->bind_param($types, ...$params);
+$count_stmt->execute();
+$total_records = $count_stmt->get_result()->fetch_assoc()['total'];
+$total_pages = ceil($total_records / $limit);
+$offset = ($page - 1) * $limit;
+
+// --- 4. LẤY DỮ LIỆU ---
+$data_sql = "SELECT * FROM transactions WHERE $where_sql ORDER BY $order_sql LIMIT ? OFFSET ?";
+$params[] = $limit;
+$params[] = $offset;
+$types .= "ii";
+
+$stmt = $conn->prepare($data_sql);
+$stmt->bind_param($types, ...$params);
 $stmt->execute();
 $result = $stmt->get_result();
 
-// Tính tổng chi tiêu
-$total_stmt = $conn->prepare("SELECT SUM(amount) as total FROM transactions WHERE user_id=?");
-$total_stmt->bind_param("i", $user_id);
-$total_stmt->execute();
-$total_result = $total_stmt->get_result();
-$total_row = $total_result->fetch_assoc();
-$total_amount = $total_row['total'] ?? 0;
+// --- 5. THỐNG KÊ TỔNG QUAN ---
+$stats_sql = "SELECT type, SUM(amount) as total FROM transactions WHERE user_id = ? GROUP BY type";
+$stats_stmt = $conn->prepare($stats_sql);
+$stats_stmt->bind_param("i", $user_id);
+$stats_stmt->execute();
+$stats_res = $stats_stmt->get_result();
 
-// Đếm số giao dịch
-$count_stmt = $conn->prepare("SELECT COUNT(*) as count FROM transactions WHERE user_id=?");
-$count_stmt->bind_param("i", $user_id);
-$count_stmt->execute();
-$count_result = $count_stmt->get_result();
-$count_row = $count_result->fetch_assoc();
-$transaction_count = $count_row['count'] ?? 0;
+$total_income = 0;
+$total_expense = 0;
+
+while ($row = $stats_res->fetch_assoc()) {
+    if ($row['type'] == 'income') $total_income = $row['total'];
+    if ($row['type'] == 'expense') $total_expense = $row['total'];
+}
+$balance = $total_income - $total_expense;
+
+function buildQuery($new_params = []) {
+    $params = $_GET;
+    foreach ($new_params as $key => $value) $params[$key] = $value;
+    return http_build_query($params);
+}
+$conn->close();
+
+// --- CẤU HÌNH HEADER ---
+$page_title = 'Quản lý thu chi';
+$active_page = 'transactions';
+
+include $_SERVER['DOCUMENT_ROOT'] . '/Quanlychitieu/includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8">
-<title>Các khoản chi tiêu - Quản Lý Chi Tiêu</title>
-<link rel="stylesheet" href="../../css/style.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
 <style>
-:root {
-    --primary-color: #2f855a;
-    --primary-light: #38a169;
-    --primary-dark: #276749;
-    --danger-color: #e53e3e;
-    --warning-color: #dd6b20;
-    --info-color: #3182ce;
-    --light-bg: #f7fafc;
-    --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    --hover-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-}
-
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Poppins', sans-serif;
-}
-
-body {
-    background-color: #f0f2f5;
-    color: #2d3748;
-    line-height: 1.6;
-}
-
-/* Header cố định */
-header {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 70px;
-    background: var(--primary-color);
-    color: white;
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 30px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-
-header .logo {
-    font-weight: 700;
-    font-size: 22px;
-    display: flex;
-    align-items: center;
-}
-
-header .logo i {
-    margin-right: 10px;
-    font-size: 24px;
-}
-
-header nav {
-    display: flex;
-    align-items: center;
-}
-
-header nav a {
-    color: white;
-    text-decoration: none;
-    margin-left: 25px;
-    font-weight: 500;
-    padding: 8px 12px;
-    border-radius: 6px;
-    transition: background 0.3s;
-}
-
-header nav a:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-header nav a.active {
-    background: rgba(255, 255, 255, 0.2);
-    font-weight: 600;
-}
-
-/* Container */
-.container {
-    width: 95%;
-    max-width: 1200px;
-    margin: 0 auto;
-    padding-top: 100px;
-}
-
-/* Page Header */
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px;
-    flex-wrap: wrap;
-    gap: 15px;
-}
-
-.page-title {
-    font-size: 28px;
-    color: #2d3748;
-    font-weight: 600;
-}
-
-/* Stats Cards */
-.stats-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 20px;
-    margin-bottom: 30px;
-}
-
-.stat-card {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: var(--card-shadow);
-    display: flex;
-    align-items: center;
-    transition: transform 0.3s, box-shadow 0.3s;
-}
-
-.stat-card:hover {
-    transform: translateY(-5px);
-    box-shadow: var(--hover-shadow);
-}
-
-.stat-icon {
-    width: 60px;
-    height: 60px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 15px;
-    font-size: 24px;
-    color: white;
-}
-
-.stat-icon.primary {
-    background: var(--primary-color);
-}
-
-.stat-icon.danger {
-    background: var(--danger-color);
-}
-
-.stat-icon.info {
-    background: var(--info-color);
-}
-
-.stat-info h3 {
-    font-size: 14px;
-    color: #718096;
-    margin-bottom: 5px;
-    font-weight: 500;
-}
-
-.stat-value {
-    font-size: 22px;
-    font-weight: 700;
-    margin-bottom: 5px;
-}
-
-.stat-desc {
-    font-size: 12px;
-    color: #a0aec0;
-}
-
-/* Filters và Actions */
-.filters-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 25px;
-    flex-wrap: wrap;
-    gap: 15px;
-    background: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: var(--card-shadow);
-}
-
-.filter-group {
-    display: flex;
-    gap: 15px;
-    flex-wrap: wrap;
-}
-
-.filter-select {
-    padding: 10px 15px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    background: white;
-    font-size: 14px;
-    color: #4a5568;
-    cursor: pointer;
-    transition: border 0.3s;
-}
-
-.filter-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-}
-
-.search-box {
-    position: relative;
-    display: flex;
-    align-items: center;
-}
-
-.search-input {
-    padding: 10px 15px 10px 40px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    width: 250px;
-    font-size: 14px;
-    transition: border 0.3s;
-}
-
-.search-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-}
-
-.search-icon {
-    position: absolute;
-    left: 12px;
-    color: #a0aec0;
-}
-
-/* Buttons */
-.button {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--primary-color);
-    color: white;
-    padding: 12px 20px;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 500;
-    transition: background 0.3s, transform 0.2s;
-    border: none;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.button:hover {
-    background: var(--primary-dark);
-    transform: translateY(-2px);
-    color: white;
-}
-
-.button i {
-    font-size: 16px;
-}
-
-.button.secondary {
-    background: #e2e8f0;
-    color: #4a5568;
-}
-
-.button.secondary:hover {
-    background: #cbd5e0;
-}
-
-.button.danger {
-    background: var(--danger-color);
-}
-
-.button.danger:hover {
-    background: #c53030;
-}
-
-/* Table */
-.table-container {
-    background: white;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: var(--card-shadow);
-    margin-bottom: 30px;
-}
-
-.table-wrapper {
-    overflow-x: auto;
-    width: 100%;
-}
-
-.table {
-    width: 100%;
-    border-collapse: collapse;
-    min-width: 800px;
-}
-
-.table th {
-    background: var(--primary-color);
-    color: white;
-    padding: 16px 20px;
-    text-align: left;
-    font-weight: 600;
-    font-size: 14px;
-}
-
-.table td {
-    padding: 16px 20px;
-    border-bottom: 1px solid #e2e8f0;
-    font-size: 14px;
-}
-
-.table tr:last-child td {
-    border-bottom: none;
-}
-
-.table tr:hover {
-    background: #f7fafc;
-}
-
-/* Category Badge */
-.category-badge {
-    display: inline-block;
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
-    text-align: center;
-}
-
-.category-badge.food {
-    background: #fed7d7;
-    color: #c53030;
-}
-
-.category-badge.transport {
-    background: #feebc8;
-    color: #dd6b20;
-}
-
-.category-badge.shopping {
-    background: #c6f6d5;
-    color: #276749;
-}
-
-.category-badge.bills {
-    background: #bee3f8;
-    color: #2c5aa0;
-}
-
-.category-badge.entertainment {
-    background: #e9d8fd;
-    color: #6b46c1;
-}
-
-.category-badge.other {
-    background: #edf2f7;
-    color: #4a5568;
-}
-
-/* Amount styling */
-.amount {
-    font-weight: 600;
-}
-
-.amount.negative {
-    color: var(--danger-color);
-}
-
-.amount.positive {
-    color: var(--primary-color);
-}
-
-/* Actions */
-.actions {
-    display: flex;
-    gap: 10px;
-}
-
-.action-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-decoration: none;
-    transition: background 0.3s, transform 0.2s;
-    color: white;
-    font-size: 14px;
-}
-
-.action-btn.edit {
-    background: var(--info-color);
-}
-
-.action-btn.edit:hover {
-    background: #2c5aa0;
-    transform: scale(1.1);
-}
-
-.action-btn.delete {
-    background: var(--danger-color);
-}
-
-.action-btn.delete:hover {
-    background: #c53030;
-    transform: scale(1.1);
-}
-
-/* Empty state */
-.empty-state {
-    text-align: center;
-    padding: 50px 20px;
-    color: #718096;
-}
-
-.empty-state i {
-    font-size: 64px;
-    margin-bottom: 20px;
-    color: #cbd5e0;
-}
-
-.empty-state h3 {
-    font-size: 20px;
-    margin-bottom: 10px;
-    color: #4a5568;
-}
-
-.empty-state p {
-    margin-bottom: 20px;
-}
-
-/* Pagination */
-.pagination {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 10px;
-    margin-top: 30px;
-}
-
-.pagination a, .pagination span {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 500;
-}
-
-.pagination a {
-    background: white;
-    color: #4a5568;
-    box-shadow: var(--card-shadow);
-    transition: background 0.3s;
-}
-
-.pagination a:hover {
-    background: var(--primary-color);
-    color: white;
-}
-
-.pagination .current {
-    background: var(--primary-color);
-    color: white;
-}
-
-.pagination .disabled {
-    background: #e2e8f0;
-    color: #a0aec0;
-    cursor: not-allowed;
-}
-
-/* Footer */
-footer {
-    text-align: center;
-    padding: 20px;
-    color: #718096;
-    font-size: 14px;
-    margin-top: 40px;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-    header {
-        padding: 0 15px;
-        height: 60px;
-    }
+    /* CSS Thống kê */
+    .stats-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+    .stat-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 15px; }
+    .stat-icon { width: 50px; height: 50px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+    .stat-info h3 { font-size: 14px; color: #718096; margin-bottom: 5px; }
+    .stat-value { font-size: 20px; font-weight: 700; }
     
-    header .logo {
-        font-size: 18px;
-    }
+    .income-card .stat-icon { background: #def7ec; color: #03543f; }
+    .income-card .stat-value { color: #046c4e; }
+    .expense-card .stat-icon { background: #fde8e8; color: #9b1c1c; }
+    .expense-card .stat-value { color: #c81e1e; }
+    .balance-card .stat-icon { background: #e1effe; color: #1e429f; }
+    .balance-card .stat-value { color: #3f83f8; }
+
+    /* CSS Filter */
+    .filters-toolbar { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; justify-content: space-between; align-items: center; }
+    .form-select { padding: 9px 15px; border: 1px solid #e2e8f0; border-radius: 8px; outline: none; color: #4a5568; cursor: pointer; }
     
-    header nav a {
-        margin-left: 15px;
-        font-size: 14px;
-        padding: 6px 10px;
+    /* CSS Table */
+    .transaction-table { width: 100%; border-collapse: collapse; }
+    .transaction-table th { background: #f8fafc; padding: 15px; text-align: left; color: #64748b; font-weight: 600; border-bottom: 2px solid #edf2f7; font-size: 14px; }
+    .transaction-table td { padding: 15px; border-bottom: 1px solid #edf2f7; color: #2d3748; font-size: 14px; }
+    .transaction-table tr:hover { background-color: #f8f9fa; }
+
+    /* Badge & Amount */
+    .badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-block; }
+    .badge-income { background: #def7ec; color: #03543f; border: 1px solid #bcf0da; }
+    .badge-expense { background: #fde8e8; color: #9b1c1c; border: 1px solid #fbd5d5; }
+    .amount-income { color: #057a55; font-weight: 700; }
+    .amount-expense { color: #e02424; font-weight: 700; }
+
+    /* Action Buttons */
+    .action-group { display: flex; justify-content: center; gap: 8px; }
+    .action-btn { width: 34px; height: 34px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: 0.2s; border: none; cursor: pointer; }
+    .action-btn.edit { background: #e0f2fe; color: #0284c7; }
+    .action-btn.edit:hover { background: #0284c7; color: white; }
+    .action-btn.delete { background: #fee2e2; color: #dc2626; }
+    .action-btn.delete:hover { background: #dc2626; color: white; }
+
+    /* --- [MỚI] CSS CHO PHÂN TRANG (PAGINATION) --- */
+    .pagination-container { display: flex; justify-content: center; margin-top: 30px; gap: 5px; }
+    .pagination-link { 
+        display: inline-block; padding: 8px 14px; 
+        border: 1px solid #e2e8f0; border-radius: 8px; 
+        text-decoration: none; color: #64748b; 
+        background: white; transition: all 0.2s; font-weight: 500;
     }
-    
-    .container {
-        padding-top: 80px;
-        width: 98%;
-    }
-    
-    .page-header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-    
-    .filters-actions {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-    
-    .filter-group {
-        width: 100%;
-        justify-content: space-between;
-    }
-    
-    .search-input {
-        width: 100%;
-    }
-    
-    .table th, .table td {
-        padding: 12px 15px;
-    }
-    
-    .stats-cards {
-        grid-template-columns: 1fr;
-    }
-}
+    .pagination-link:hover { background-color: #f1f5f9; border-color: #cbd5e0; color: #0f172a; }
+    .pagination-link.active { background-color: #2f855a; color: white; border-color: #2f855a; }
+    .pagination-link.disabled { color: #cbd5e0; pointer-events: none; background: #f8fafc; }
+
+    @media (max-width: 768px) { .filters-toolbar { flex-direction: column; align-items: stretch; } }
 </style>
-</head>
-<body>
 
-<!-- HEADER từ dashboard.php -->
-<header>
-    <div class="logo">💰 Quản Lý Chi Tiêu</div>
-    <nav>
-        <a href="/Quanlychitieu/dashboard.php">Trang Chủ</a>
-        
-        <a href="/Quanlychitieu/view/user/transactions.php">Các Khoản Chi tiêu</a>
-        
-        <a href="/Quanlychitieu/view/chart.php">Xem biểu đồ</a>
-        
-        <a href="/Quanlychitieu/view/user/pages/goal.php" class="active">Mục tiêu tiết kiệm</a>
-        
-        <a href="/Quanlychitieu/view/auth/logout.php">Đăng xuất</a>
-    </nav>
-</header>
-
-<section class="transactions">
+<section class="transactions-page">
     <div class="container">
-        <div class="page-header">
-            <h1 class="page-title"><i class="fas fa-receipt"></i> Các khoản chi tiêu của bạn</h1>
-            <a href="transactions_add.php" class="button">
-                <i class="fas fa-plus"></i> Thêm chi tiêu mới
+        
+        <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+            <div>
+                <h1 style="font-size: 24px; font-weight: 700; color: #2d3748; margin-bottom: 5px;">Quản Lý Thu Chi</h1>
+                <p style="color: #718096;">Theo dõi dòng tiền ra vào của bạn.</p>
+            </div>
+            <a href="transactions_add.php" class="button" style="background: #2f855a; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 500; display: flex; align-items: center; gap: 8px;">
+                <i class="fas fa-plus"></i> Thêm giao dịch
             </a>
         </div>
 
-        <!-- Thống kê nhanh -->
-        <div class="stats-cards">
-            <div class="stat-card">
-                <div class="stat-icon primary">
-                    <i class="fas fa-money-bill-wave"></i>
-                </div>
+        <div class="stats-overview">
+            <div class="stat-card income-card">
+                <div class="stat-icon"><i class="fas fa-arrow-down"></i></div>
                 <div class="stat-info">
-                    <h3>Tổng chi tiêu</h3>
-                    <p class="stat-value"><?= number_format($total_amount, 0, ',', '.') ?>₫</p>
-                    <p class="stat-desc">Tất cả giao dịch</p>
+                    <h3>Tổng Thu Nhập</h3>
+                    <p class="stat-value">+ <?php echo number_format($total_income, 0, ',', '.'); ?> ₫</p>
                 </div>
             </div>
-            
-            <div class="stat-card">
-                <div class="stat-icon danger">
-                    <i class="fas fa-shopping-cart"></i>
-                </div>
+            <div class="stat-card expense-card">
+                <div class="stat-icon"><i class="fas fa-arrow-up"></i></div>
                 <div class="stat-info">
-                    <h3>Số giao dịch</h3>
-                    <p class="stat-value"><?= $transaction_count ?></p>
-                    <p class="stat-desc">Tổng số giao dịch</p>
+                    <h3>Tổng Chi Tiêu</h3>
+                    <p class="stat-value">- <?php echo number_format($total_expense, 0, ',', '.'); ?> ₫</p>
                 </div>
             </div>
-            
-            <div class="stat-card">
-                <div class="stat-icon info">
-                    <i class="fas fa-calendar-alt"></i>
-                </div>
+            <div class="stat-card balance-card">
+                <div class="stat-icon"><i class="fas fa-wallet"></i></div>
                 <div class="stat-info">
-                    <h3>Chi tiêu trung bình</h3>
-                    <p class="stat-value">
-                        <?= $transaction_count > 0 ? number_format($total_amount / $transaction_count, 0, ',', '.') : 0 ?>₫
-                    </p>
-                    <p class="stat-desc">Mỗi giao dịch</p>
+                    <h3>Số Dư Hiện Tại</h3>
+                    <p class="stat-value"><?php echo number_format($balance, 0, ',', '.'); ?> ₫</p>
                 </div>
             </div>
         </div>
 
-        <!-- Bộ lọc và tìm kiếm -->
-        <div class="filters-actions">
-            <div class="filter-group">
-                <select class="filter-select">
-                    <option>Tất cả danh mục</option>
-                    <option>Ăn uống</option>
-                    <option>Di chuyển</option>
-                    <option>Mua sắm</option>
-                    <option>Hóa đơn</option>
-                    <option>Giải trí</option>
-                    <option>Khác</option>
+        <div class="filters-toolbar">
+            <form method="GET" id="filterForm" style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%; align-items: center;">
+                <input type="hidden" name="search" value="<?php echo htmlspecialchars($search); ?>">
+
+                <select name="type" class="form-select" onchange="document.getElementById('filterForm').submit()" style="font-weight: 600;">
+                    <option value="all" <?= $type_filter == 'all' ? 'selected' : '' ?>>Tất cả giao dịch</option>
+                    <option value="expense" <?= $type_filter == 'expense' ? 'selected' : '' ?>>🔴 Khoản Chi</option>
+                    <option value="income" <?= $type_filter == 'income' ? 'selected' : '' ?>>🟢 Khoản Thu</option>
                 </select>
-                
-                <select class="filter-select">
-                    <option>Sắp xếp theo ngày mới nhất</option>
-                    <option>Sắp xếp theo ngày cũ nhất</option>
-                    <option>Sắp xếp theo số tiền (cao-thấp)</option>
-                    <option>Sắp xếp theo số tiền (thấp-cao)</option>
+
+                <select name="category" class="form-select" onchange="document.getElementById('filterForm').submit()">
+                    <option value="all">-- Tất cả danh mục --</option>
+                    <optgroup label="Chi tiêu">
+                        <option value="Food" <?= $category_filter == 'Food' ? 'selected' : '' ?>>Ăn uống</option>
+                        <option value="Transport" <?= $category_filter == 'Transport' ? 'selected' : '' ?>>Di chuyển</option>
+                        <option value="Shopping" <?= $category_filter == 'Shopping' ? 'selected' : '' ?>>Mua sắm</option>
+                        <option value="Bills" <?= $category_filter == 'Bills' ? 'selected' : '' ?>>Hóa đơn</option>
+                        <option value="Entertainment" <?= $category_filter == 'Entertainment' ? 'selected' : '' ?>>Giải trí</option>
+                    </optgroup>
+                    <optgroup label="Thu nhập">
+                        <option value="Salary" <?= $category_filter == 'Salary' ? 'selected' : '' ?>>Lương</option>
+                        <option value="Bonus" <?= $category_filter == 'Bonus' ? 'selected' : '' ?>>Thưởng</option>
+                        <option value="Investment" <?= $category_filter == 'Investment' ? 'selected' : '' ?>>Đầu tư</option>
+                        <option value="Other" <?= $category_filter == 'Other' ? 'selected' : '' ?>>Khác</option>
+                    </optgroup>
                 </select>
-                
-                <div class="search-box">
-                    <i class="fas fa-search search-icon"></i>
-                    <input type="text" class="search-input" placeholder="Tìm kiếm giao dịch...">
-                </div>
-            </div>
-            
-            <div class="action-buttons">
-                <a href="#" class="button secondary">
-                    <i class="fas fa-download"></i> Xuất file
-                </a>
-            </div>
+
+                <select name="sort" class="form-select" onchange="document.getElementById('filterForm').submit()">
+                    <option value="newest" <?= $sort_option == 'newest' ? 'selected' : '' ?>>Mới nhất</option>
+                    <option value="oldest" <?= $sort_option == 'oldest' ? 'selected' : '' ?>>Cũ nhất</option>
+                    <option value="amount_desc" <?= $sort_option == 'amount_desc' ? 'selected' : '' ?>>Số tiền giảm dần</option>
+                    <option value="amount_asc" <?= $sort_option == 'amount_asc' ? 'selected' : '' ?>>Số tiền tăng dần</option>
+                </select>
+
+                <?php if($type_filter != 'all' || !empty($category_filter) || $sort_option != 'newest' || !empty($search)): ?>
+                    <a href="transactions.php" style="margin-left: auto; color: #718096; text-decoration: none; font-size: 13px;"><i class="fas fa-undo"></i> Đặt lại</a>
+                <?php endif; ?>
+            </form>
         </div>
 
-        <!-- Bảng giao dịch -->
-        <div class="table-container">
-            <div class="table-wrapper">
-                <table class="table">
+        <div class="table-container" style="background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow: hidden;">
+            <div style="overflow-x: auto;">
+                <table class="transaction-table">
                     <thead>
                         <tr>
                             <th>Ngày</th>
+                            <th>Loại</th>
                             <th>Danh mục</th>
                             <th>Mô tả</th>
                             <th>Số tiền</th>
-                            <th>Hành động</th>
+                            <th style="text-align: center;">Thao tác</th>
                         </tr>
                     </thead>
                     <tbody>
-                    <?php if($result->num_rows > 0): ?>
-                        <?php while($row = $result->fetch_assoc()): 
-                            $category_class = strtolower($row['category'] ?? 'other');
-                            if (!in_array($category_class, ['food', 'transport', 'shopping', 'bills', 'entertainment'])) {
-                                $category_class = 'other';
-                            }
-                        ?>
-                        <tr>
-                            <td><?= date('d/m/Y', strtotime($row['date'])) ?></td>
-                            <td>
-                                <span class="category-badge <?= $category_class ?>">
-                                    <?= htmlspecialchars($row['category']) ?>
-                                </span>
-                            </td>
-                            <td><?= htmlspecialchars($row['description']) ?></td>
-                            <td class="amount negative">- <?= number_format($row['amount'], 0, ',', '.') ?>₫</td>
-                            <td class="actions">
-                                <a href="transactions_edit.php?id=<?= $row['id'] ?>" class="action-btn edit" title="Sửa">
-                                    <i class="fas fa-edit"></i>
-                                </a>
-                                <a href="transactions_delete.php?id=<?= $row['id'] ?>" class="action-btn delete" title="Xóa" onclick="return confirm('Bạn có chắc muốn xóa giao dịch này?')">
-                                    <i class="fas fa-trash"></i>
-                                </a>
-                            </td>
-                        </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr>
-                            <td colspan="5">
-                                <div class="empty-state">
-                                    <i class="fas fa-receipt"></i>
-                                    <h3>Chưa có giao dịch nào</h3>
-                                    <p>Bắt đầu theo dõi chi tiêu của bạn bằng cách thêm giao dịch đầu tiên.</p>
-                                    <a href="transactions_add.php" class="button">
-                                        <i class="fas fa-plus"></i> Thêm giao dịch đầu tiên
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                    <?php endif; ?>
+                        <?php if($result->num_rows > 0): ?>
+                            <?php 
+                            $cat_map = [
+                                'Food' => '🍔 Ăn uống', 'Transport' => '🛵 Di chuyển', 'Shopping' => '🛍️ Mua sắm',
+                                'Bills' => '🧾 Hóa đơn', 'Entertainment' => '🎬 Giải trí', 'Other' => '📦 Khác',
+                                'Salary' => '💰 Lương', 'Bonus' => '🎁 Thưởng', 'Investment' => '📈 Đầu tư'
+                            ];
+                            ?>
+                            <?php while($row = $result->fetch_assoc()): 
+                                $type = $row['type'] ?? 'expense';
+                                $is_income = ($type === 'income');
+                                $cat_raw = $row['category'];
+                                $display_name = $cat_map[$cat_raw] ?? $cat_raw;
+                            ?>
+                            <tr style="border-bottom: 1px solid #f3f4f6;">
+                                <td><?php echo date('d/m/Y', strtotime($row['date'])); ?></td>
+                                <td>
+                                    <?php if($is_income): ?>
+                                        <span class="badge badge-income"><i class="fas fa-arrow-down"></i> Thu</span>
+                                    <?php else: ?>
+                                        <span class="badge badge-expense"><i class="fas fa-arrow-up"></i> Chi</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo htmlspecialchars($display_name); ?></td>
+                                <td style="color: #6b7280;"><?php echo htmlspecialchars($row['description']); ?></td>
+                                <td class="<?php echo $is_income ? 'amount-income' : 'amount-expense'; ?>">
+                                    <?php echo $is_income ? '+' : '-'; ?> 
+                                    <?php echo number_format($row['amount'], 0, ',', '.'); ?> ₫
+                                </td>
+                                <td style="text-align: center;">
+                                    <div class="action-group">
+                                        <a href="transactions_edit.php?id=<?php echo $row['id']; ?>" class="action-btn edit" title="Sửa"><i class="fas fa-edit"></i></a>
+                                        <a href="transactions_delete.php?id=<?php echo $row['id']; ?>" class="action-btn delete" title="Xóa" onclick="return confirm('Bạn chắc chắn muốn xóa?')"><i class="fas fa-trash"></i></a>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="6" style="text-align: center; padding: 40px; color: #9ca3af;">
+                                    <i class="fas fa-inbox" style="font-size: 40px; margin-bottom: 10px; display: block; color: #e5e7eb;"></i>
+                                    Không tìm thấy giao dịch nào.
+                                </td>
+                            </tr>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- Phân trang (giả lập) -->
-        <div class="pagination">
-            <a href="#" class="disabled"><i class="fas fa-chevron-left"></i></a>
-            <span class="current">1</span>
-            <a href="#">2</a>
-            <a href="#">3</a>
-            <a href="#"><i class="fas fa-chevron-right"></i></a>
-        </div>
-        
-        <!-- FOOTER từ dashboard.php -->
-<footer>
-    <div class="footer-content">
-        <div class="footer-section">
-            <h3>Quản Lý Chi Tiêu</h3>
-            <p>Ứng dụng giúp bạn quản lý tài chính cá nhân một cách hiệu quả và thông minh.</p>
-        </div>
-        <div class="footer-section">
-            <h3>Liên kết nhanh</h3>
-            <ul>
-                <li><a href="dashboard.php">Trang chủ</a></li>
-                <li><a href="view/user/transactions.php">Chi tiêu</a></li>
-                <li><a href="/Quanlychitieu/view/chart.php">Biểu đồ</a></li>
-                <li><a href="view/user/pages/goal.php">Mục tiêu</a></li>
-            </ul>
-        </div>
-        <div class="footer-section">
-            <h3>Hỗ trợ</h3>
-            <ul>
-                <li><a href="#">Trung tâm trợ giúp</a></li>
-                <li><a href="#">Liên hệ</a></li>
-                <li><a href="#">Điều khoản sử dụng</a></li>
-                <li><a href="#">Chính sách bảo mật</a></li>
-            </ul>
-        </div>
-    </div>
-    <div class="footer-bottom">
-        <p>© 2025 Quản Lý Chi Tiêu. Designed with ❤️</p>
-    </div>
-</footer>
+        <?php if ($total_pages > 1): ?>
+        <div class="pagination-container" style="margin-top: 30px;">
+            <a href="?<?php echo buildQuery(['page' => $page - 1]); ?>" class="pagination-link <?php echo ($page <= 1) ? 'disabled' : ''; ?>"><i class="fas fa-chevron-left"></i></a>
+            
+            <?php 
+            $start = max(1, $page - 2); $end = min($total_pages, $page + 2);
+            
+            if($start > 1) echo '<a href="?'.buildQuery(['page'=>1]).'" class="pagination-link">1</a>';
+            if($start > 2) echo '<span style="padding:0 5px; color:#cbd5e0;">...</span>';
 
-<script>
-// JavaScript tìm kiếm giữ nguyên
-document.addEventListener('DOMContentLoaded', function() {
-    const searchInput = document.querySelector('.search-input');
-    const tableRows = document.querySelectorAll('.table tbody tr');
-    
-    searchInput.addEventListener('input', function() {
-        const searchTerm = this.value.toLowerCase();
-        
-        tableRows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            if (text.includes(searchTerm)) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        });
-    });
-});
-</script>
+            for ($i = $start; $i <= $end; $i++): ?>
+                <a href="?<?php echo buildQuery(['page' => $i]); ?>" class="pagination-link <?php echo ($i == $page) ? 'active' : ''; ?>"><?php echo $i; ?></a>
+            <?php endfor;
 
-</body>
-</html>
+            if($end < $total_pages - 1) echo '<span style="padding:0 5px; color:#cbd5e0;">...</span>';
+            if($end < $total_pages) echo '<a href="?'.buildQuery(['page'=>$total_pages]).'" class="pagination-link">'.$total_pages.'</a>';
+            ?>
+            
+            <a href="?<?php echo buildQuery(['page' => $page + 1]); ?>" class="pagination-link <?php echo ($page >= $total_pages) ? 'disabled' : ''; ?>"><i class="fas fa-chevron-right"></i></a>
+        </div>
+        <?php endif; ?>
+
+    </div>
+</section>
+
+<?php include $_SERVER['DOCUMENT_ROOT'] . '/Quanlychitieu/includes/footer.php'; ?>
